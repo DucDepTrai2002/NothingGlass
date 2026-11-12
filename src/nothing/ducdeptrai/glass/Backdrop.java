@@ -37,6 +37,92 @@ final class Backdrop {
 
     private Backdrop() {}
 
+    // ---- Nguồn 1: chụp màn hình phía sau cửa sổ (đúng nội dung thật) ----
+    private static final float CAPTURE_SCALE = 0.08f;
+    private static final long SESSION_GAP_MS = 600;
+    private static BitmapShader sScreenShader;
+    private static boolean sCapturing;
+    private static long sLastDraw;
+    private static WeakReference<View> sSessionRoot = new WeakReference<>(null);
+
+    /** Gọi mỗi lần vẽ: mở CC lần mới (hoặc cửa sổ khác) thì chụp lại nền. */
+    static BitmapShader forDraw(View host) {
+        long now = android.os.SystemClock.uptimeMillis();
+        View root = host.getRootView();
+        boolean newSession = now - sLastDraw > SESSION_GAP_MS || sSessionRoot.get() != root;
+        sLastDraw = now;
+        if (!ScreenGrab.sBroken) {
+            if (newSession) {
+                sSessionRoot = new WeakReference<>(root);
+                sScreenShader = null;
+                capture(host);
+            }
+            if (sScreenShader != null) return sScreenShader;
+            if (!ScreenGrab.sBroken) {
+                synchronized (sWaiting) { sWaiting.add(new WeakReference<>(host)); }
+                return null; // chờ ảnh chụp (vài chục ms), tạm chỉ vẽ viền sáng
+            }
+        }
+        return get(host);
+    }
+
+    private static void capture(View host) {
+        if (sCapturing) return;
+        Rect bounds;
+        try {
+            bounds = ((WindowManager) host.getContext().getSystemService(Context.WINDOW_SERVICE))
+                    .getMaximumWindowMetrics().getBounds();
+        } catch (Throwable t) {
+            return;
+        }
+        final int sw = Math.max(1, bounds.width()), sh = Math.max(1, bounds.height());
+        sCapturing = true;
+        boolean ok = ScreenGrab.request(host, CAPTURE_SCALE, bmp -> {
+            BitmapShader shader = null;
+            if (bmp != null) {
+                try {
+                    Bitmap blurred = blurOnce(bmp);
+                    BitmapShader s = new BitmapShader(blurred, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                    s.setFilterMode(BitmapShader.FILTER_MODE_LINEAR);
+                    Matrix m = new Matrix();
+                    m.setScale(sw / (float) blurred.getWidth(), sh / (float) blurred.getHeight());
+                    s.setLocalMatrix(m);
+                    shader = s;
+                } catch (Throwable t) {
+                    Log.w(TAG, "build screen shader failed", t);
+                }
+            }
+            final BitmapShader fs = shader;
+            sMain.post(() -> {
+                sCapturing = false;
+                if (fs != null) {
+                    sScreenShader = fs;
+                    Log.i(TAG, "screen backdrop ready");
+                } else {
+                    Log.w(TAG, "screen capture returned nothing, fallback to wallpaper");
+                    ScreenGrab.sBroken = true;
+                }
+                invalidateWaiting();
+            });
+        });
+        if (!ok) {
+            sCapturing = false;
+        }
+    }
+
+    private static void invalidateWaiting() {
+        ArrayList<WeakReference<View>> list;
+        synchronized (sWaiting) {
+            list = new ArrayList<>(sWaiting);
+            sWaiting.clear();
+        }
+        for (WeakReference<View> r : list) {
+            View v = r.get();
+            if (v != null) v.invalidate();
+        }
+    }
+
+    // ---- Nguồn 2 (dự phòng): hình nền hệ thống ----
     /** Trả về shader nền theo toạ độ màn hình, hoặc null nếu chưa có. */
     static BitmapShader get(View host) {
         Context ctx = host.getContext();
@@ -111,28 +197,20 @@ final class Backdrop {
                     sWallpaperId = id;
                 }
                 sLoading = false;
-                ArrayList<WeakReference<View>> list;
-                synchronized (sWaiting) {
-                    list = new ArrayList<>(sWaiting);
-                    sWaiting.clear();
-                }
-                for (WeakReference<View> r : list) {
-                    View v = r.get();
-                    if (v != null) v.invalidate();
-                }
+                invalidateWaiting();
             });
         }, "NothingGlass-bg").start();
     }
 
     /** Làm mờ thêm bằng box blur 3 lượt trên bitmap nhỏ. */
-    private static Bitmap blurOnce(Bitmap src) {
+    static Bitmap blurOnce(Bitmap src) {
         int w = src.getWidth(), h = src.getHeight();
         int[] px = new int[w * h];
         src.getPixels(px, 0, w, 0, 0, w, h);
         int[] tmp = new int[w * h];
         for (int pass = 0; pass < 3; pass++) {
-            boxH(px, tmp, w, h, 2);
-            boxV(tmp, px, w, h, 2);
+            boxH(px, tmp, w, h, 3);
+            boxV(tmp, px, w, h, 3);
         }
         Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         out.setPixels(px, 0, w, 0, 0, w, h);

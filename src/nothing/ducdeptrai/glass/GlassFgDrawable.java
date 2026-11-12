@@ -123,7 +123,7 @@ public final class GlassFgDrawable extends Drawable {
             BitmapShader bg = null;
             boolean dark = false;
             if (mHost != null) {
-                bg = Backdrop.get(mHost);
+                bg = Backdrop.forDraw(mHost);
                 mHost.getLocationOnScreen(mLoc);
                 dark = (mHost.getResources().getConfiguration().uiMode
                         & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
