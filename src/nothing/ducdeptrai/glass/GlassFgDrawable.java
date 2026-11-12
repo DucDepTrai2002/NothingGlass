@@ -29,7 +29,8 @@ public final class GlassFgDrawable extends Drawable {
           + "uniform float uHasBg;\n"
           + "uniform float uDark;\n"
           + "uniform float4 uP1;\n"   // x: độ rộng vùng khúc xạ (tỉ lệ r), y: lực khúc xạ, z: tách màu px, w: độ phủ nền
-          + "uniform float4 uP2;\n"   // x: sáng góc trên-trái, y: sáng góc dưới-phải, z: mép sắc, w: độ bão hoà
+          + "uniform float4 uP2;\n"
+          + "uniform float4 uP3;\n"   // x: sáng góc trên-trái, y: sáng góc dưới-phải, z: mép sắc, w: độ bão hoà
           + "half4 main(float2 p) {\n"
           + "  float2 c = uSize * 0.5;\n"
           + "  float r = max(min(uRadius, min(c.x, c.y)), 1.0);\n"
@@ -39,7 +40,7 @@ public final class GlassFgDrawable extends Drawable {
           + "  float e = -d;\n"
           + "  float band = max(r * uP1.x, 6.0);\n"
           + "  float t = clamp(e / band, 0.0, 1.0);\n"
-          + "  float bend = (1.0 - t) * (1.0 - t);\n"
+          + "  float bend = (1.0 - t) * (1.0 - t) * (1.0 - t);\n"
           + "  float2 dir = p - clamp(p, float2(r, r), uSize - float2(r, r));\n"
           + "  float L = length(dir);\n"
           + "  float2 n = L > 0.001 ? dir / L : float2(0.0, 0.0);\n"
@@ -51,9 +52,9 @@ public final class GlassFgDrawable extends Drawable {
           + "  float3 col = float3(rr, bg.g, bb);\n"
           + "  float lum = dot(col, float3(0.299, 0.587, 0.114));\n"
           + "  col = mix(float3(lum, lum, lum), col, uP2.w);\n"
-          + "  col = col * mix(1.0, 0.70, uDark);\n"
+          + "  col = col * mix(1.0, uP3.x, uDark);\n"
           + "  float lit = dot(n, float2(-0.6, -0.8));\n"
-          + "  float rim = exp(-e / 2.5);\n"
+          + "  float rim = exp(-e / uP3.y);\n"
           + "  float spec = rim * (uP2.x * max(lit, 0.0) + uP2.y * max(-lit, 0.0)) + exp(-e / 1.0) * uP2.z;\n"
           + "  float aBg = bend * uP1.w * uHasBg;\n"
           + "  float3 outc = clamp(col * uHasBg + spec, 0.0, 1.0);\n"
@@ -69,14 +70,16 @@ public final class GlassFgDrawable extends Drawable {
     private float mRadius;
 
     // Thông số chỉnh được
-    public static float BAND = 0.9f;        // độ rộng vùng khúc xạ so với bán kính bo góc
-    public static float REFRACT = 0.7f;     // lực khúc xạ
-    public static float CHROMA = 5.0f;      // tách màu (px)
-    public static float BG_ALPHA = 0.95f;   // độ phủ nền khúc xạ ở mép
-    public static float LIGHT_TL = 0.55f;   // viền sáng góc trên trái
-    public static float LIGHT_BR = 0.28f;   // viền sáng góc dưới phải
-    public static float EDGE = 0.18f;       // mép sắc
-    public static float SATURATION = 1.25f; // độ bão hoà màu nền
+    public static float BAND = 0.45f;        // độ rộng vùng khúc xạ so với bán kính bo góc
+    public static float REFRACT = 0.8f;     // lực khúc xạ
+    public static float CHROMA = 4.0f;      // tách màu (px)
+    public static float BG_ALPHA = 0.55f;   // độ phủ nền khúc xạ ở mép
+    public static float LIGHT_TL = 0.60f;   // viền sáng góc trên trái
+    public static float LIGHT_BR = 0.30f;   // viền sáng góc dưới phải
+    public static float EDGE = 0.22f;       // mép sắc
+    public static float SATURATION = 1.10f; // độ bão hoà màu nền
+    public static float DARK_DIM = 0.50f;   // hạ sáng nền khúc xạ ở chế độ tối
+    public static float RIM_WIDTH = 2.0f;   // độ rộng viền sáng (px)
 
     public GlassFgDrawable(float radius) {
         mRadius = radius;
@@ -133,6 +136,7 @@ public final class GlassFgDrawable extends Drawable {
             mShader.setFloatUniform("uDark", dark ? 1f : 0f);
             mShader.setFloatUniform("uP1", BAND, REFRACT, CHROMA, BG_ALPHA);
             mShader.setFloatUniform("uP2", LIGHT_TL, LIGHT_BR, EDGE, SATURATION);
+            mShader.setFloatUniform("uP3", DARK_DIM, RIM_WIDTH, 0f, 0f);
             mPaint.setShader(mShader);
             int save = canvas.save();
             canvas.translate(b.left, b.top);
