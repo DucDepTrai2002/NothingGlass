@@ -33,8 +33,8 @@ jobs:
           echo "platform: $PLAT"
           echo "build-tools: $BT"
           mkdir -p out/classes out/dex
-          if ! javac -source 11 -target 11 -nowarn \
-            -bootclasspath "$PLAT/android.jar" -cp "$PLAT/android.jar" \
+          if ! javac --release 11 -nowarn \
+            -cp "$PLAT/android.jar" \
             -d out/classes $(find src -name '*.java') 2> javac.log; then
             echo "::error::javac: $(head -c 1500 javac.log | tr '\n' ' ')"; exit 1
           fi
