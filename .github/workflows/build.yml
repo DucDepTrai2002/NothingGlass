@@ -12,27 +12,36 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
 
       - name: Compile and dex
         run: |
           set -euo pipefail
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          PLAT=$(ls -d "$SDK"/platforms/android-* | sort -V | tail -1)
-          BT=$(ls -d "$SDK"/build-tools/* | sort -V | tail -1)
+          PLAT="$SDK/platforms/android-35"
+          BT="$SDK/build-tools/35.0.0"
+          [ -f "$PLAT/android.jar" ] || { echo "::error::missing $PLAT/android.jar"; ls "$SDK" "$SDK/platforms" || true; exit 1; }
           echo "platform: $PLAT"
           echo "build-tools: $BT"
           mkdir -p out/classes out/dex
-          javac -source 11 -target 11 -nowarn \
+          if ! javac -source 11 -target 11 -nowarn \
             -bootclasspath "$PLAT/android.jar" -cp "$PLAT/android.jar" \
-            -d out/classes $(find src -name '*.java')
-          "$BT/d8" --release --min-api 33 --lib "$PLAT/android.jar" \
-            --output out/dex $(find out/classes -name '*.class')
+            -d out/classes $(find src -name '*.java') 2> javac.log; then
+            echo "::error::javac: $(head -c 1500 javac.log | tr '\n' ' ')"; exit 1
+          fi
+          if ! "$BT/d8" --release --min-api 33 --lib "$PLAT/android.jar" \
+            --output out/dex $(find out/classes -name '*.class') 2> d8.log; then
+            echo "::error::d8: $(head -c 1500 d8.log | tr '\n' ' ')"; exit 1
+          fi
           cp out/dex/classes.dex glass.dex
           ls -la glass.dex
 
